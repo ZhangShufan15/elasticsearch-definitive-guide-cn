@@ -1,36 +1,23 @@
-[[backing-up-your-cluster]]
-=== Backing Up Your Cluster
+##集群备份
 
-As with any software that stores data, it is important to routinely back up your
-data. ((("clusters", "backing up")))((("post-deployment", "backing up your cluster")))((("backing up your cluster"))) Elasticsearch replicas provide high availability during runtime; they allow
-you to tolerate sporadic node loss without an interruption of service.
+像任何一个其他存储数据的软件一样，定期例行备份数据十分重要。Elasticsearch的复制策略提供了运行时的高可用，它能够在零星的节点下线的情况下保持服务不间断。
 
-Replicas do not provide protection from catastrophic failure, however.  For that,
-you need a real backup of your cluster--a complete copy in case something goes
-wrong.
+集群复制在严重的集群故障时不能提供数据保护。因而，为了防止出现大的事故，你需要一个真正的集群备份——完整拷贝。
 
-To back up your cluster, you can use the `snapshot` API.((("snapshot-restore API")))  This will take the current
-state and data in your cluster and save it to a shared repository.  This
-backup process is "smart."  Your first snapshot will be a complete copy of data,
-but all subsequent snapshots will save the _delta_ between the existing
-snapshots and the new data.  Data is incrementally added and deleted as you snapshot
-data over time.  This means subsequent backups will be substantially
-faster since they are transmitting far less data.
+可以使用`snapshot` API备份集群。它可以获取集群的当前状态和数据，并保存到一个共享的存储中。备份过程是“智能”的。第一份备份是一个完全的数据拷贝，但是，所有后续的备份只存储上一次备份和当前时间之间的增量数据。当你不断的备份数据时，数据是增量的添加和删除的。也就意味着，后续的备份操作会因为传输的数据更少而更加快速。
 
-To use this functionality, you must first create a repository to save data.
-There are several repository types that you may choose from:
+为了使用备份功能，你必须首先创建一个存储用于保存数据。以下是几个你可以选择的存储类型：
 
-- Shared filesystem, such as a NAS
-- Amazon S3
-- HDFS (Hadoop Distributed File System)
-- Azure Cloud
+* 共享问价系统，比如NAS
+* Amazon S3
+* HDFS（Hadoop分布式文件系统）
+* Azure Cloud
 
-==== Creating the Repository
+###创建存储
 
-Let's set up a shared ((("backing up your cluster", "creating the repository")))((("filesystem repository")))filesystem repository:
+我们来配置一个共享文件系统存储：
 
-[source,js]
-----
+```javascript
 PUT _snapshot/my_backup <1>
 {
     "type": "fs", <2>
@@ -38,32 +25,27 @@ PUT _snapshot/my_backup <1>
         "location": "/mount/backups/my_backup" <3>
     }
 }
-----
-<1> We provide a name for our repository, in this case it is called `my_backup`.
-<2> We specify that the type of the repository should be a shared filesystem.
-<3> And finally, we provide a mounted drive as the destination.
+```
 
-NOTE: The shared filesystem path must be accessible from all nodes in your
-cluster!
+* <1>这里是我们所用存储的名字，叫做`my_backup`
+* <2>这里声明存储的类型是共享文件系统
+* <3>最后，我们给定一个挂载好的驱动地址作为备份目的地
 
-This will create the repository and required metadata at the mount point.  There
-are also some other options that you may want to configure, depending on the
-performance profile of your nodes, network, and repository location:
+> 备注：共享文件系统路径必须能够在所有的集群节点可访问！
 
-`max_snapshot_bytes_per_sec`::
-    When snapshotting data into the repo, this controls
-the throttling of that process.  The default is `20mb` per second.
+上述请求会创建存储并获取挂载点的元数据信息。这里还有一些其他的参数可以配置，这要看节点的性能、网络和存储位置：
 
-`max_restore_bytes_per_sec`::
-When restoring data from the repo, this controls
-how much the restore is throttled so that your network is not saturated.  The
-default is `20mb` per second.
+`max_snapshot_bytes_per_sec`:
 
-Let's assume we have a very fast network and are OK with extra traffic, so we
-can increase the defaults:
+在备份数据到存储时，该参数控制备份处理的带宽。默认值是20mb/s。
 
-[source,js]
-----
+`max_restore_bytes_per_sec`:
+
+在恢复数据时，该参数控制恢复处理的带宽。默认值是20mb/s。
+
+假设我们的网络速度比较快，并且能够承受额外的传输量，因此，我们提高默认值：
+
+```javascript
 POST _snapshot/my_backup/ <1>
 {
     "type": "fs",
@@ -73,45 +55,32 @@ POST _snapshot/my_backup/ <1>
         "max_restore_bytes_per_sec" : "50mb"
     }
 }
-----
-<1> Note that we are using a `POST` instead of `PUT`.  This will update the settings
-of the existing repository.
-<2> Then add our new settings.
+```
 
-==== Snapshotting All Open Indices
+* <1>注意这里使用了`POST`而不是 `PUT`。用于更改已经存在的存储。
+* <2>设置新的配置值
 
-A repository can contain multiple snapshots.((("indices", "open, snapshots on")))((("backing up your cluster", "snapshots on all open indexes")))  Each snapshot is associated with a
-certain set of indices (for example, all indices, some subset, or a single index).  When
-creating a snapshot, you specify which indices you are interested in and
-give the snapshot a unique name.
+###备份所有的索引
 
-Let's start with the most basic snapshot command:
+一个存储可以容纳多个备份。每一个备份包含一组索引（所有索引、部分索引、单个索引）。当创建备份的时候，你需要指明要备份的索引，并且指定一个唯一的备份名称。
 
-[source,js]
-----
+我们从最基本的备份命令开始：
+
+```javascript
 PUT _snapshot/my_backup/snapshot_1
-----
+```
 
-This will back up all open indices into a snapshot named `snapshot_1`, under the
-`my_backup` repository.  This call will return immediately, and the snapshot will
-proceed in the background.
+这将备份所有打开的索引到`my_backup`存储中，备份名为 `snapshot_1`文件。这个请求会立刻返回，备份操作将在后台执行。
 
-[TIP]
-==================================================
 
-Usually you'll want your snapshots to proceed as a background process, but occasionally
-you may want to wait for completion in your script.  This can be accomplished by
-adding a `wait_for_completion` flag:
-
-[source,js]
-----
-PUT _snapshot/my_backup/snapshot_1?wait_for_completion=true
-----
-
-This will block the call until the snapshot has completed.  Note that large snapshots
-may take a long time to return!
-
-==================================================
+> 备注：
+> 通常情况下，你希望备份过程在后台执行，但有时候可能也会想等待脚本执行完成后再返回。这可以通过在请求中添加`wait_for_completion` 标记做到：
+>
+> ```javascript
+> PUT _snapshot/my_backup/snapshot_1?wait_for_completion=true
+> ```
+>
+> 这将阻塞请求，知道备份结束。对于大的备份可能需要很长的时间才能返回。
 
 ==== Snapshotting Particular Indices
 
